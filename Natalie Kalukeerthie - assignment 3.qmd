@@ -1,0 +1,168 @@
+---
+title: "Assignment 3"
+author: "Natalie Kalukeerthie"
+format:
+  revealjs:
+    css: styles.css
+    code-overflow: wrap
+    width: 1400
+    height: 800
+editor: visual
+codefold: true
+footer: "DATA 608"
+---
+
+------------------------------------------------------------------------
+
+## Introduction
+
+"Has the FED been able to fulfill the mandate given to it by Congress?"
+
+------------------------------------------------------------------------
+
+```{r,,message=FALSE, warning=FALSE}
+#load library
+library(tidyverse)
+library(viridis)
+library(patchwork)
+library(seasonal)
+library(forecast)
+library(stringr)
+```
+
+```{r}
+#import datasets
+
+#load CPI
+cpi <- read_csv("https://raw.githubusercontent.com/nk014914/data608/refs/heads/main/CPI.csv")
+
+#load Unemployment
+unemploy <-read_csv("https://raw.githubusercontent.com/nk014914/data608/refs/heads/main/unemployment_rate.csv")
+
+# Load FED funds Rate
+fed_rate <-read_csv("https://raw.githubusercontent.com/nk014914/data608/refs/heads/main/FEDFUNDS.csv")
+```
+
+```{r}
+
+#change column name of fed file
+fed_rate <- fed_rate %>%
+  rename(Date = observation_date)
+
+# convert to date type
+cpi$Date <-as.Date(cpi$Date, format = "%m/%d/%Y")
+unemploy$Date <- as.Date(unemploy$Date, format ="%m/%d/%Y")
+fed_rate$Date <- as.Date(fed_rate$Date, format ="%m/%d/%Y")
+
+# combine the 3 datasets into one dataframe
+combined <- full_join(cpi, unemploy, by = "Date") %>%
+                full_join(fed_rate, by = "Date")
+```
+
+```{r}
+#Calculating inflation rate
+
+combined <- combined %>%
+  arrange(Date) %>%  # sorted by date
+  mutate(Inflation_Rate = (CPI / lag(CPI, 12) - 1) * 100)  #using previous year to compare and calculate CPI%
+
+```
+
+```{r}
+# Identify the highest unemployment rate and its corresponding date
+max_unemployment <- combined[which.max(combined$Unemployment_Rate), ]  # Row with highest Unemployment Rate
+highlight_date <- max_unemployment$Date
+
+# Get corresponding Fed Funds Rate and Inflation Rate for that date
+highlight_fedfunds <- combined$FEDFUNDS[combined$Date == highlight_date]
+highlight_inflation <- combined$Inflation_Rate[combined$Date == highlight_date]
+
+# Unemployment Rate Plot (p1) - Highlight max point with comment and white box
+p1 <- ggplot(combined, aes(x = Date, y = Unemployment_Rate)) +
+  geom_line(color = "black") +
+  geom_point(aes(x = highlight_date, y = max_unemployment$Unemployment_Rate), color = "blue", size = 3) + 
+  geom_text(aes(x = highlight_date, y = max_unemployment$Unemployment_Rate + 1, 
+                label = "Pandemic caused a spike in unemployment"), 
+            color = "blue", size = 2, hjust = 0, nudge_x = 40) +  # Move the comment to the right using nudge_x
+  labs(title = "Unemployment Rate Over Time", x = "Date", y = "Rate (%)") +
+  theme_gray(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 10),
+    axis.text.y = element_text(size = 8),  # Smaller y-axis numbers
+    axis.title.y = element_text(size = 10)  # Smaller y-axis label
+  )
+
+# Fed Funds Rate Plot (p2) - Move the comment up
+p2 <- ggplot(combined, aes(x = Date, y = FEDFUNDS)) +
+  geom_line(color = "black") +
+  geom_point(aes(x = highlight_date, y = highlight_fedfunds), color = "blue", size = 3) + 
+  geom_text(aes(x = highlight_date, y = highlight_fedfunds + 0.5, 
+                label = "Federal interest rates are cut due to high unemployment"), 
+            color = "blue", size = 2, hjust = 0, nudge_y = 1) +  # Move the comment up using nudge_y
+  labs(title = "Federal Funds Rate Over Time", x = "Date", y = "Rate (%)") +
+  theme_gray(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 10),
+    axis.text.y = element_text(size = 8),  # Smaller y-axis numbers
+    axis.title.y = element_text(size = 10)  # Smaller y-axis label
+  )
+
+# Inflation Rate Plot (p3) - Move the comment down more
+p3 <- ggplot(combined, aes(x = Date, y = Inflation_Rate)) +
+  geom_line(color = "black") +
+  geom_point(aes(x = highlight_date, y = highlight_inflation), color = "blue", size = 3) + 
+  geom_text(aes(x = highlight_date, y = highlight_inflation - 1, 
+                label = "Inflation slowly rose post interest rate cuts"), 
+            color = "blue", size = 2, hjust = 0, nudge_y = -1) +  # Move the comment down using nudge_y
+  labs(title = "Inflation Rate Over Time", x = "Date", y = "Rate (%)",
+       caption =  "The Federal Reserve adjusts interest rates in response to economic crises, which stabilizes inflation and unemployment. \nMonetary policy effects occur with a lag as we see the increase of interest rates occur almost five years later.") +  
+  theme_gray(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 10),
+    plot.caption = element_text(hjust = 0),
+    axis.text.y = element_text(size = 8),  # Smaller y-axis numbers
+    axis.title.y = element_text(size = 10)  # Smaller y-axis label
+  )
+
+# Arrange the three plots vertically with a larger overall title and adjust layout
+(p1 / p2 / p3) + 
+  plot_annotation(
+    title = "The FED Cuts Interest Rates When Unemployment Increases",
+    theme = theme(plot.title = element_text(size = 16, hjust = 0.5))
+  ) + 
+  plot_layout(heights = c(2, 2, 2))  # Adjust the height for each individual plot
+```
+
+------------------------------------------------------------------------
+
+```{r}
+ggplot(combined, aes(x = Inflation_Rate, y = Unemployment_Rate)) +
+  geom_point(color = "blue", alpha = 0.6) +  # Scatter plot with transparency
+  geom_smooth(method = "lm", color = "red", se = FALSE) +  # Add trend line (linear model)
+  labs(
+    title = "Unemployment Rate vs Inflation Rate",
+    x = "Inflation Rate (%)",
+    y = "Unemployment Rate (%)",
+    caption = "There is a negative relationship between Unemployment rate and Inflation rate"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.caption = element_text(hjust = 0.0)  # Left caption
+  )
+```
+
+------------------------------------------------------------------------
+
+#### 3 Minute Story
+
+-   The Federal Reserve's mandate from Congress is to control inflation and maintain low unemployment. When evaluating the question, "Has the Fed fulfilled its mandate?" the overall answer appears to be yes.
+
+-   During periods of economic downturn (ex. 2020 Pandemic Lockdown) we see a decline in inflation rates and sharp increases in unemployment from layoffs. In response, the Fed lowered interest rates to stimulate economic spending and reduce unemployment, aligning with its goal of maintaining economic stability.
+
+-   Following these crises, interest rates gradually increased alongside rising inflation, but changes in interest rates do not have an immediate impact as there is a lag effect in monetary policy. Financial agreements (such as mortgages) often lock in rates for extended periods. This delay means that the full effects of policy adjustments take time to materialize in the economy.
+
+------------------------------------------------------------------------
+
+#### Big Idea
+
+The Federal Reserve has largely fulfilled its mandate by adjusting interest rates in response to economic crises, stabilizing inflation and unemployment.
